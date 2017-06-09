@@ -1,41 +1,40 @@
 const co = require('co')
-const SOFA = require('sofa-js')
 
 const Bot = require('./lib/Bot')
 const Fiat = require('./lib/Fiat')
 const unit = require('./lib/unit');
 
+const {
+  COMMANDS,
+  STATES,
+  KEYS,
+} = require('./constants')
+
+const {
+  sendMessage,
+  sendMessageWithDefaultControls,
+  sendMessageWithCancelOption,
+  sendMessageForGetLucky,
+  sendMessageForDonationQuestion,
+  sendMessageForDonationAmount,
+  sendWelcomeMessage,
+} = require('./message')
+
+const { sendEth } = require('./payments')
+
+const {
+  isPositiveNumber,
+  isUrl,
+} = require('./utils')
+
 let bot = new Bot()
-
-const COMMANDS = {
-  GET_LUCKY: 'get_lucky',
-  LIKE: 'like',
-  SHOW_MORE_URL: 'show_more_url',
-  START_OVER: 'start_over',
-  SUBMIT_URL: 'submit_url',
-  WANT_TO_DONATE: 'want_to_donate',
-  WHATS_REVEL: 'whats_revel',
-}
-
-const STATES = {
-  IDLE: 'idle',
-  WAIT_FOR_URL: 'wait_for_url',
-  WAIT_FOR_DONATION_AMOUNT: 'wait_for_donation_amount',
-}
-
-const KEYS = {
-  LUCKY_URL: 'lucky_url',
-  TOKEN_ID: 'tokenId',
-  TOP10: 'top10',
-  UNCONFIRMED_DONATIONS: 'unconfirmed_donations',
-}
 
 // ROUTING
 
 bot.onEvent = function(session, message) {
   switch (message.type) {
     case 'Init':
-      welcome(session)
+      sendWelcomeMessage(session)
       break
     case 'Message':
       onMessage(session, message)
@@ -47,7 +46,7 @@ bot.onEvent = function(session, message) {
       onPayment(session, message)
       break
     case 'PaymentRequest':
-      welcome(session)
+      sendWelcomeMessage(session)
       break
   }
 }
@@ -58,7 +57,7 @@ function onMessage(session, message) {
   } else if (isWaitingForDonationAmount(session)) {
     donate(session, message.body)
   } else {
-    welcome(session)
+    sendWelcomeMessage(session)
   }
 }
 
@@ -127,52 +126,34 @@ function handleConfirmedPayment(session, message) {
   if (unconfirmedDonations && unconfirmedDonations[message.txHash]) {
     const urlRecord = unconfirmedDonations[message.txHash]
 
+    console.log(message.txHash)
+
     // Remove the donation from unconfirmed
     delete unconfirmedDonations[message.txHash]
     session.set(KEYS.UNCONFIRMED_DONATIONS, unconfirmedDonations)
 
     // Send the contributor ETH, woooohooo!
     bot.client.send(urlRecord.contributor_token_id,
-                    'Someone donated your url: ' + urlRecord.url)
+                    'Someone sent you a donation for your url: ' + urlRecord.url)
     Fiat.fetch().then(toEth => {
       const address = urlRecord.contributor_payment_address
       const ethAmount = unit.fromWei(message.value, 'ether')
-      sendEth(session, address, ethAmount, (session, error, result) => {
+      sendEth(bot, session, address, ethAmount, (session, error, result) => {
         if (error) {
           sendMessage(session, error)
+          console.log(error)
+        } else {
+          console.log('Payment successful!')
         }
       })
     })
   }
 }
 
-// STATES
-
-function welcome(session) {
-  session.reply(SOFA.Message({
-    body: "Hello from Revel!",
-    controls: [
-      {
-        type: "button",
-        label: "What's Revel",
-        value: COMMANDS.WHATS_REVEL,
-      },
-      {
-        type: "button",
-        label: "Get lucky!",
-        value: COMMANDS.GET_LUCKY,
-      },
-      {
-        type: "button",
-        label: "Submit a url",
-        value: COMMANDS.SUBMIT_URL,
-      }
-    ]
-  }))
-}
+// Helper functions
 
 function intro(session) {
-  session.reply("Revel is a service that helps you discover useful information on the web.")
+  session.reply("Revel is a service that helps you discover interesting information on the web.")
 
   message = "Click “Get lucky” to see what people are sharing.\n\n" +
             "Click “Submit a url” to share something interesting."
@@ -201,7 +182,7 @@ function resetSession(session) {
 
 function submitUrl(session, url) {
   if (!isUrl(url)) {
-    sendMessageWithCancelOption(session, 'Invalid URL, please send again')
+    sendMessageWithCancelOption(session, 'Invalid url, please send again')
     return
   }
 
@@ -354,145 +335,10 @@ function donate(session, amountStr) {
     return
   }
 
-  const amount = parseInt(amountStr)
+  const amount = Number(amountStr)
   Fiat.fetch().then(toEth => {
     const ethAmount = toEth.USD(amount)
     session.requestEth(ethAmount, 'Url donation')
     sendMessageWithCancelOption(session, 'You can safely pay the contributor with Ether')
   })
-}
-
-// HELPERS
-
-function sendMessage(session, message) {
-  session.reply(message)
-}
-
-function sendMessageWithDefaultControls(session, message) {
-  session.reply(SOFA.Message({
-    body: message,
-    controls: [
-      {
-        type: "button",
-        label: "Get lucky!",
-        value: COMMANDS.GET_LUCKY,
-      },
-      {
-        type: "button",
-        label: "Submit a url",
-        value: COMMANDS.SUBMIT_URL,
-      }
-    ],
-    showKeyboard: false,
-  }))
-}
-
-function sendMessageWithCancelOption(session, message) {
-  session.reply(SOFA.Message({
-    body: message,
-    controls: [
-      {
-        type: "button",
-        label: "Never mind",
-        value: COMMANDS.START_OVER,
-      },
-    ],
-    showKeyboard: false,
-  }))
-}
-
-function sendMessageForGetLucky(session, message) {
-  session.reply(SOFA.Message({
-    body: message,
-    controls: [
-      {
-        type: "button",
-        label: "I like it!",
-        value: COMMANDS.LIKE,
-      },
-      {
-        type: "button",
-        label: "Show me more",
-        value: COMMANDS.SHOW_MORE_URL,
-      },
-      {
-        type: "button",
-        label: "Start over",
-        value: COMMANDS.START_OVER,
-      },
-    ],
-    showKeyboard: false,
-  }))
-}
-
-function sendMessageForDonationQuestion(session, message) {
-  session.reply(SOFA.Message({
-    body: message,
-    controls: [
-      {
-        type: "button",
-        label: "Yes I do!",
-        value: COMMANDS.WANT_TO_DONATE,
-      },
-      {
-        type: "button",
-        label: "Never mind",
-        value: COMMANDS.START_OVER,
-      },
-    ],
-    showKeyboard: false,
-  }))
-}
-
-function sendMessageForDonationAmount(session, message) {
-  session.reply(SOFA.Message({
-    body: message,
-    showKeyboard: true,
-  }))
-}
-
-// Payment helper methods
-
-function sendEth(session, address, value, callback) {
-  value = '0x' + unit.toWei(value, 'ether').toString(16)
-  sendWei(session, address, value, callback);
-}
-
-function sendWei(session, address, value, callback) {
-  if (!address) {
-    if (callback) {
-      callback(session, "Cannot send transactions to users with no payment address", null);
-    }
-    return;
-  }
-  bot.client.rpc(session, {
-    method: "sendTransaction",
-    params: {
-      to: address,
-      value: value
-    }
-  }, (session, error, result) => {
-    if (result) {
-      session.reply(SOFA.Payment({
-        status: "unconfirmed",
-        value: value,
-        txHash: result.txHash,
-        fromAddress: session.user.payment_address,
-        toAddress: address,
-      }));
-    }
-    if (callback) { callback(session, error, result); }
-  });
-}
-
-// Utility functions
-
-function isUrl(str) {
-  const urlRegex = '^(?!mailto:)(?:(?:http|https|ftp)://)(?:\\S+(?::\\S*)?@)?(?:(?:(?:[1-9]\\d?|1\\d\\d|2[01]\\d|22[0-3])(?:\\.(?:1?\\d{1,2}|2[0-4]\\d|25[0-5])){2}(?:\\.(?:[0-9]\\d?|1\\d\\d|2[0-4]\\d|25[0-4]))|(?:(?:[a-z\\u00a1-\\uffff0-9]+-?)*[a-z\\u00a1-\\uffff0-9]+)(?:\\.(?:[a-z\\u00a1-\\uffff0-9]+-?)*[a-z\\u00a1-\\uffff0-9]+)*(?:\\.(?:[a-z\\u00a1-\\uffff]{2,})))|localhost)(?::\\d{2,5})?(?:(/|\\?|#)[^\\s]*)?$';
-  const url = new RegExp(urlRegex, 'i');
-  return str.length < 2083 && url.test(str);
-}
-
-function isPositiveNumber(str) {
-  return /^[+]?([0-9]+(?:[\.][0-9]*)?|\.[0-9]+)$/.test(str)
 }
