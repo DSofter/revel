@@ -25,6 +25,7 @@ const { sendEth } = require('./payments')
 const {
   isPositiveNumber,
   isUrl,
+  shuffleArray,
 } = require('./utils')
 
 let bot = new Bot()
@@ -261,6 +262,25 @@ function updateTop10(url, urlInfo) {
   })
 }
 
+function getRandomIndex(session, size) {
+  const viewUrlOrder = session.get(KEYS.VIEW_URL_ORDER) || []
+  if (viewUrlOrder.length == 0) {
+    Array.apply(null, {length: size}).forEach((elem, index) => {
+      viewUrlOrder.push(index)
+    })
+    shuffleArray(viewUrlOrder)
+  }
+
+  const result = viewUrlOrder.pop()
+  session.set(KEYS.VIEW_URL_ORDER, viewUrlOrder)
+
+  if (viewUrlOrder.length == 0) {
+    sendMessage(session, 'Oops, it looks like you have viewed all the urls we have now;)')
+  }
+
+  return result
+}
+
 function getLucky(session) {
   co(function* () {
     const top10 = yield bot.client.store.getKey(KEYS.TOP10)
@@ -268,7 +288,7 @@ function getLucky(session) {
       sendMessageWithDefaultControls(session, 'It’s an empty world, share something to make it beautiful!')
     } else {
       console.log(top10)
-      const randomIndex = Math.floor(Math.random() * top10.length)
+      const randomIndex = getRandomIndex(session, top10.length)
       console.log(randomIndex)
 
       setCurrentLuckyUrl(session, top10[randomIndex])
