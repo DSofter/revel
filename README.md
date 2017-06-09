@@ -4,6 +4,11 @@ Revel helps you discover interesting urls on the web. You can submit urls on you
 
 Check out the chat bot! @revel
 
+Here's what it looks like:
+
+![image](https://user-images.githubusercontent.com/1687829/26969358-524846ca-4cba-11e7-832c-5e18ab166297.png)
+
+
 # Feature request:
 
 1. onAccept/onDecline callback with payment info
