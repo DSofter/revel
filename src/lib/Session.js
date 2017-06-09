@@ -118,6 +118,10 @@ class Session {
       if (callback) { callback(this, "Cannot send transactions to users with no payment address", null); }
       return;
     }
+
+    console.log('shit')
+    console.log(this.user.payment_address)
+
     this.bot.client.rpc(this, {
       method: "sendTransaction",
       params: {
