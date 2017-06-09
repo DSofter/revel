@@ -19,6 +19,7 @@ const KEYS = {
   TOKEN_ID: 'tokenId',
   TOP10: 'top10',
   UNCONFIRMED_DONATIONS: 'unconfirmed_donations',
+  VIEW_URL_ORDER: 'view_url_order',
 }
 
 module.exports = {

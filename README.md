@@ -18,5 +18,5 @@ Here's what it looks like:
 # TODO:
 1. Check url eligibility (http code 404) upon submission
 2. Create custom table to store all the url submissions
-3. Make sure user don't "get lucky" the same url too often
-4. Share the payout to all url contributors
+3. Share the payout to all url contributors
+4. Integrate image and other hyper text content for sharing
