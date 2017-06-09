@@ -59,8 +59,6 @@ function onMessage(session, message) {
     donate(session, message.body)
   } else {
     welcome(session)
-
-    console.log(session.get(KEYS.UNCONFIRMED_DONATIONS))
   }
 }
 
@@ -104,42 +102,47 @@ function onPayment(session, message) {
     if (message.status == 'unconfirmed') {
       // payment has been sent to the ethereum network, but is not yet confirmed
       sendMessage(session, `Thanks for the payment!`);
-
-      if (isWaitingForDonationAmount(session)) {
-        const unconfirmedDonations = session.get(KEYS.UNCONFIRMED_DONATIONS) || []
-        unconfirmedDonations.push({
-          txHash: message.txHash,
-          urlRecord: getCurrentLuckyUrl(session),
-        })
-        session.set(KEYS.UNCONFIRMED_DONATIONS, unconfirmedDonations)
-
-        resetSession(session)
-      }
+      handleUnconfirmedPayment(session, message)
     } else if (message.status == 'confirmed') {
-      // Previous transaction is confirmed, pay the contributor
-      const unconfirmedDonations = session.get(KEYS.UNCONFIRMED_DONATIONS)
-      const match = unconfirmedDonations.find(elem => elem.txHash == message.txHash)
-      if (match) {
-        // Remove the donation from unconfirmed
-        unconfirmedDonations.splice(unconfirmedDonations.indexOf(match), 1)
-        session.set(KEYS.UNCONFIRMED_DONATIONS, unconfirmedDonations)
-
-        // Send the contributor ETH, woooohooo!
-        bot.client.send(match.urlRecord.contributor_token_id,
-                        'Someone donated your url: ' + match.urlRecord.url)
-        Fiat.fetch().then(toEth => {
-          const address = match.urlRecord.contributor_payment_address
-          const ethAmount = unit.fromWei(message.value, 'ether')
-          sendEth(session, address, ethAmount, (session, error, result) => {
-            if (error) {
-              sendMessage(session, error)
-            }
-          })
-        })
-      }
+      handleConfirmedPayment(session, message)
     } else if (message.status == 'error') {
       sendMessage(session, `There was an error with your payment!🚫`);
     }
+  }
+}
+
+function handleUnconfirmedPayment(session, message) {
+  if (isWaitingForDonationAmount(session)) {
+    const unconfirmedDonations = session.get(KEYS.UNCONFIRMED_DONATIONS) || {}
+    unconfirmedDonations[message.txHash] = getCurrentLuckyUrl(session)
+    session.set(KEYS.UNCONFIRMED_DONATIONS, unconfirmedDonations)
+
+    resetSession(session)
+  }
+}
+
+function handleConfirmedPayment(session, message) {
+  // Pay the contributor
+  const unconfirmedDonations = session.get(KEYS.UNCONFIRMED_DONATIONS)
+  if (unconfirmedDonations && unconfirmedDonations[message.txHash]) {
+    const urlRecord = unconfirmedDonations[message.txHash]
+
+    // Remove the donation from unconfirmed
+    delete unconfirmedDonations[message.txHash]
+    session.set(KEYS.UNCONFIRMED_DONATIONS, unconfirmedDonations)
+
+    // Send the contributor ETH, woooohooo!
+    bot.client.send(urlRecord.contributor_token_id,
+                    'Someone donated your url: ' + urlRecord.url)
+    Fiat.fetch().then(toEth => {
+      const address = urlRecord.contributor_payment_address
+      const ethAmount = unit.fromWei(message.value, 'ether')
+      sendEth(session, address, ethAmount, (session, error, result) => {
+        if (error) {
+          sendMessage(session, error)
+        }
+      })
+    })
   }
 }
 
